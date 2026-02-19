@@ -15,12 +15,15 @@ import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.smoothstreaming.SsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.anonymous.xmedia.CacheConfig
 
 /**
  * Factory for creating MediaSource instances based on content type.
  *
  * Automatically detects the media type from the URL and creates the appropriate
  * MediaSource (HLS, DASH, SmoothStreaming, or Progressive).
+ *
+ * Supports optional caching through [CacheConfig].
  */
 internal object MediaSourceFactory {
 
@@ -36,7 +39,7 @@ internal object MediaSourceFactory {
     }
 
     /**
-     * Creates a MediaSource for the given URL.
+     * Creates a MediaSource for the given URL with optional caching.
      *
      * The source type is automatically detected from the URL extension and MIME type.
      * Supports:
@@ -46,18 +49,29 @@ internal object MediaSourceFactory {
      * - Progressive download (MP4, WebM, etc.)
      * - Local files (file:// or content://)
      *
+     * When cacheConfig is provided and enabled, downloaded segments will be cached
+     * to disk for faster replay and reduced bandwidth usage.
+     *
      * @param url Media URL or local file URI
      * @param context Android context
-     * @param dataSourceFactory Optional custom data source factory
+     * @param cacheConfig Optional cache configuration (null to disable caching)
+     * @param dataSourceFactory Optional custom data source factory (overrides caching)
      * @return Configured MediaSource for the content
      */
     @OptIn(UnstableApi::class)
     fun create(
         url: String,
         context: Context,
+        cacheConfig: CacheConfig? = null,
         dataSourceFactory: DataSource.Factory? = null
     ): MediaSource {
-        val factory = dataSourceFactory ?: DefaultDataSource.Factory(context)
+        // Use custom factory, or cache factory, or default
+        val factory = when {
+            dataSourceFactory != null -> dataSourceFactory
+            cacheConfig?.enabled == true -> CacheManager.createCacheDataSourceFactory(context, cacheConfig)
+            else -> DefaultDataSource.Factory(context)
+        }
+
         val mediaItem = createMediaItem(url)
         val sourceType = detectSourceType(url)
 

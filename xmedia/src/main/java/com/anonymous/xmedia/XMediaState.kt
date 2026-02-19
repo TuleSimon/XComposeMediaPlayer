@@ -5,6 +5,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.media3.exoplayer.ExoPlayer
+import com.anonymous.xmedia.internal.CacheManager
+import com.anonymous.xmedia.internal.PlayerFactory
 import com.anonymous.xmedia.internal.StateManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.StateFlow
@@ -81,7 +83,7 @@ fun rememberXMediaState(
  * @param scope Coroutine scope for state management
  */
 class XMediaState internal constructor(
-    config: XMediaConfig,
+    private val config: XMediaConfig,
     scope: CoroutineScope
 ) {
     private val stateManager = StateManager(config, scope)
@@ -249,6 +251,115 @@ class XMediaState internal constructor(
      */
     fun setVolume(volume: Float) = stateManager.setVolume(volume)
 
+    // ==================== Caching ====================
+
+    /**
+     * Pre-caches an HLS stream for instant playback.
+     *
+     * Downloads the initial segments of an HLS stream in the background so that
+     * playback can start instantly without network latency. This is useful for
+     * pre-loading the next video in a playlist or feed.
+     *
+     * **Requires caching to be enabled** in [XMediaConfig.cacheConfig].
+     * If caching is not enabled, this method does nothing.
+     *
+     * @param url HLS manifest URL (.m3u8)
+     * @param context Android context
+     * @param durationMs How much content to pre-cache in milliseconds (default: 10 seconds)
+     * @param onProgress Called with progress updates (0.0 to 1.0)
+     * @param onComplete Called when pre-caching completes successfully
+     * @param onError Called if pre-caching fails
+     *
+     * Example usage:
+     * ```kotlin
+     * val state = rememberXMediaState(XMediaConfig.HighPerformance)
+     *
+     * // Pre-cache the next video while current one plays
+     * LaunchedEffect(nextVideoUrl) {
+     *     state.preCacheHls(
+     *         url = nextVideoUrl,
+     *         context = context,
+     *         durationMs = 15_000L, // Pre-cache 15 seconds
+     *         onProgress = { progress ->
+     *             Log.d("XMedia", "Pre-cache: ${(progress * 100).toInt()}%")
+     *         },
+     *         onComplete = {
+     *             Log.d("XMedia", "Pre-cache complete!")
+     *         }
+     *     )
+     * }
+     * ```
+     */
+    fun preCacheHls(
+        url: String,
+        context: Context,
+        durationMs: Long = 10_000L,
+        onProgress: ((Float) -> Unit)? = null,
+        onComplete: (() -> Unit)? = null,
+        onError: ((Exception) -> Unit)? = null
+    ) {
+        val cacheConfig = config.cacheConfig
+        if (cacheConfig == null || !cacheConfig.enabled) {
+            onError?.invoke(IllegalStateException("Caching is not enabled in XMediaConfig"))
+            return
+        }
+
+        CacheManager.preCacheHls(
+            url = url,
+            context = context,
+            config = cacheConfig,
+            durationMs = durationMs,
+            onProgress = onProgress,
+            onComplete = onComplete,
+            onError = onError
+        )
+    }
+
+    /**
+     * Gets the current cache size in bytes.
+     *
+     * Returns 0 if caching is not enabled.
+     */
+    fun getCacheSize(): Long = CacheManager.getCacheSize()
+
+    /**
+     * Clears all cached video content.
+     *
+     * This removes all cached video segments from disk. Use this to free up
+     * storage space or reset the cache.
+     */
+    fun clearCache() = CacheManager.clearCache()
+
+    // ==================== Bandwidth ====================
+
+    /**
+     * Gets the last measured bandwidth estimate in bits per second.
+     *
+     * This value is shared across all XMedia players and persists across
+     * player instances. It's useful for:
+     * - Displaying network quality to users
+     * - Making decisions about video quality
+     * - Pre-selecting appropriate quality before playback starts
+     *
+     * Returns 0 if no measurement has been made yet.
+     *
+     * Example:
+     * ```kotlin
+     * val bandwidthBps = state.getLastBandwidthEstimate()
+     * val bandwidthMbps = bandwidthBps / 1_000_000.0
+     * Text("Network: %.1f Mbps".format(bandwidthMbps))
+     * ```
+     */
+    fun getLastBandwidthEstimate(): Long = PlayerFactory.getLastBandwidthEstimate()
+
+    /**
+     * Resets the bandwidth estimate.
+     *
+     * The next player will start with the initial estimate from [BandwidthConfig]
+     * instead of using the last measured value.
+     */
+    fun resetBandwidthEstimate() = PlayerFactory.resetBandwidthEstimate()
+
     // ==================== Advanced Access ====================
 
     /**
@@ -301,5 +412,91 @@ class XMediaState internal constructor(
      */
     internal fun setOnFirstFrameRendered(callback: (() -> Unit)?) {
         stateManager.onFirstFrameRendered = callback
+    }
+
+    companion object {
+        /**
+         * Pre-caches an HLS stream without needing a player instance.
+         *
+         * This static method allows pre-caching videos before a player is created,
+         * useful for preloading content during app initialization or when browsing
+         * a video list.
+         *
+         * @param url HLS manifest URL (.m3u8)
+         * @param context Android context
+         * @param cacheConfig Cache configuration
+         * @param durationMs How much content to pre-cache in milliseconds (default: 10 seconds)
+         * @param onProgress Called with progress updates (0.0 to 1.0)
+         * @param onComplete Called when pre-caching completes successfully
+         * @param onError Called if pre-caching fails
+         *
+         * Example:
+         * ```kotlin
+         * // In ViewModel or Application
+         * val cacheConfig = CacheConfig(enabled = true, maxCacheSize = 200L * 1024 * 1024)
+         *
+         * XMediaState.preCacheHls(
+         *     url = "https://example.com/video.m3u8",
+         *     context = applicationContext,
+         *     cacheConfig = cacheConfig,
+         *     durationMs = 15_000L
+         * )
+         * ```
+         */
+        fun preCacheHls(
+            url: String,
+            context: Context,
+            cacheConfig: CacheConfig,
+            durationMs: Long = 10_000L,
+            onProgress: ((Float) -> Unit)? = null,
+            onComplete: (() -> Unit)? = null,
+            onError: ((Exception) -> Unit)? = null
+        ) {
+            if (!cacheConfig.enabled) {
+                onError?.invoke(IllegalStateException("CacheConfig.enabled must be true"))
+                return
+            }
+
+            CacheManager.preCacheHls(
+                url = url,
+                context = context,
+                config = cacheConfig,
+                durationMs = durationMs,
+                onProgress = onProgress,
+                onComplete = onComplete,
+                onError = onError
+            )
+        }
+
+        /**
+         * Gets the last measured bandwidth estimate in bits per second.
+         *
+         * This static method provides access to bandwidth info without a player instance.
+         * Useful for pre-selecting video quality before playback.
+         */
+        fun getLastBandwidthEstimate(): Long = PlayerFactory.getLastBandwidthEstimate()
+
+        /**
+         * Resets the bandwidth estimate.
+         */
+        fun resetBandwidthEstimate() = PlayerFactory.resetBandwidthEstimate()
+
+        /**
+         * Gets the current cache size in bytes.
+         */
+        fun getCacheSize(): Long = CacheManager.getCacheSize()
+
+        /**
+         * Clears all cached video content.
+         */
+        fun clearCache() = CacheManager.clearCache()
+
+        /**
+         * Releases the cache and all resources.
+         *
+         * Call this when the app is shutting down to clean up resources.
+         * Typically called in Application.onTerminate() or similar.
+         */
+        fun releaseCache() = CacheManager.release()
     }
 }

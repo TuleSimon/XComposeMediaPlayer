@@ -1,5 +1,6 @@
 package com.anonymous.examples.demos
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.anonymous.examples.R
+import com.anonymous.xmedia.XMediaConfig
 import com.anonymous.xmedia.XMediaPlayer
 import com.anonymous.xmedia.rememberXMediaState
 
@@ -42,7 +44,7 @@ import com.anonymous.xmedia.rememberXMediaState
  */
 @Composable
 fun SinglePlayerDemo() {
-    val state = rememberXMediaState()
+    val state = rememberXMediaState(config = XMediaConfig.HighPerformance)
     val isPlaying by state.isPlaying.collectAsState()
     val isBuffering by state.isBuffering.collectAsState()
     val progress by state.progress.collectAsState()
@@ -76,6 +78,7 @@ fun SinglePlayerDemo() {
             modifier = Modifier.fillMaxWidth(),
             elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
         ) {
+            Log.e("Cache size",state.getCacheSize().toString()+" bytes")
             XMediaPlayer(
                 state = state,
                 url = SampleStreams.TEARS_OF_STEEL,

@@ -111,8 +111,8 @@ internal class StateManager(
         // Clear any previous error
         _error.value = null
 
-        // Set up the media source
-        val mediaSource = MediaSourceFactory.create(url, context)
+        // Set up the media source with caching if enabled
+        val mediaSource = MediaSourceFactory.create(url, context, config.cacheConfig)
         player?.setMediaSource(mediaSource)
         player?.prepare()
         _currentUrl.value = url

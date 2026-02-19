@@ -25,7 +25,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +38,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.toRect
 import com.anonymous.examples.R
+import com.anonymous.xmedia.CacheConfig
+import com.anonymous.xmedia.XMediaConfig
 import com.anonymous.xmedia.XMediaPlayer
 import com.anonymous.xmedia.rememberXMediaState
 import kotlin.math.roundToInt
@@ -116,7 +117,13 @@ fun VideoFeedItem(
     onVisibility: (Int) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val state = rememberXMediaState()
+    val state = rememberXMediaState(
+        config = XMediaConfig(
+            cacheConfig = CacheConfig(
+                enabled = true
+            )
+        )
+    )
     val isPlaying by state.isPlaying.collectAsState()
 
     LaunchedEffect(isActive) {
